@@ -1,0 +1,387 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Tenants table - represents organizations/companies in the multi-tenant system
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique // For subdomain/identification
+  settings  Json?    // Tenant-specific configuration
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users              User[]
+  roles              Role[]
+  userRoles          UserRole[]
+  oauthClients       OAuthClient[]
+  authorizationCodes AuthorizationCode[]
+  oauthTokens        OAuthToken[]
+  samlProviders      SamlIdentityProvider[]
+  sessions           Session[]
+  auditLogs          AuditLog[]
+  tasks              Task[]
+
+  @@map("tenants")
+}
+
+// Users table
+model User {
+  id            String    @id @default(uuid())
+  tenantId      String    @map("tenant_id")
+  email         String
+  passwordHash  String?   @map("password_hash") // Nullable for social logins
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  emailVerified Boolean   @default(false) @map("email_verified")
+  isActive      Boolean   @default(true) @map("is_active")
+  lastLoginAt   DateTime? @map("last_login_at")
+  metadata      Json?     // Extra user data
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userRoles          UserRole[]          @relation("UserToUserRole")
+  assignedRoles      UserRole[]          @relation("AssignedByUser")
+  authorizationCodes AuthorizationCode[]
+  oauthTokens        OAuthToken[]
+  samlLinks          SamlUserLink[]
+  sessions           Session[]
+  auditLogs          AuditLog[]
+  tasksAssigned      Task[]              @relation("TaskAssignee")
+  tasksCreated       Task[]              @relation("TaskCreator")
+
+  // Composite unique constraint: email unique per tenant
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+// Roles table
+model Role {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  name         String
+  description  String?
+  isSystemRole Boolean  @default(false) @map("is_system_role") // Can't delete system roles
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+// Permissions table - global permissions like "users:read", "users:write"
+model Permission {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., "users:read", "users:write"
+  description String?
+  resource    String   // The resource type (e.g., "users", "roles")
+  action      String   // The action (e.g., "read", "write", "delete")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  rolePermissions RolePermission[]
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+// RolePermissions join table
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  // Relations
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// UserRoles join table
+model UserRole {
+  userId     String    @map("user_id")
+  roleId     String    @map("role_id")
+  tenantId   String    @map("tenant_id")
+  assignedAt DateTime  @default(now()) @map("assigned_at")
+  assignedBy String?   @map("assigned_by") // User who assigned this role
+
+  // Relations
+  user       User   @relation("UserToUserRole", fields: [userId], references: [id], onDelete: Cascade)
+  role       Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignedByUser User? @relation("AssignedByUser", fields: [assignedBy], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId, tenantId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([tenantId])
+  @@map("user_roles")
+}
+
+// ============================================================================
+// OAuth2 Provider Tables
+// ============================================================================
+
+// OAuth Clients - registered applications
+model OAuthClient {
+  id               String   @id @default(uuid())
+  tenantId         String?  @map("tenant_id") // null = platform-level client
+  clientId         String   @unique @map("client_id") // public identifier
+  clientSecretHash String   @map("client_secret_hash") // bcrypt hashed
+  name             String   // display name
+  description      String?
+  redirectUris     String[] @map("redirect_uris") // allowed redirect URIs
+  allowedGrantTypes String[] @map("allowed_grant_types") // authorization_code, refresh_token, client_credentials
+  allowedScopes    String[] @map("allowed_scopes") // scopes this client can request
+  isConfidential   Boolean  @default(true) @map("is_confidential") // public vs confidential client
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant            Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorizationCodes AuthorizationCode[]
+  oauthTokens       OAuthToken[]
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@map("oauth_clients")
+}
+
+// OAuth Scopes
+model OAuthScope {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., 'openid', 'profile', 'email', 'offline_access'
+  description String
+  isDefault   Boolean  @default(false) @map("is_default") // auto-include in consent
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("oauth_scopes")
+}
+
+// Authorization Codes for OAuth2 authorization code flow
+model AuthorizationCode {
+  id                  String    @id @default(uuid())
+  code                String    @unique // the authorization code
+  clientId            String    @map("client_id")
+  userId              String    @map("user_id")
+  tenantId            String    @map("tenant_id")
+  redirectUri         String    @map("redirect_uri")
+  scope               String    // space-separated scopes
+  codeChallenge       String?   @map("code_challenge") // for PKCE
+  codeChallengeMethod String?   @map("code_challenge_method") // 'S256' or 'plain'
+  expiresAt           DateTime  @map("expires_at")
+  usedAt              DateTime? @map("used_at") // codes are single use
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  client OAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([clientId])
+  @@index([userId])
+  @@map("authorization_codes")
+}
+
+// OAuth Tokens for tracking issued tokens
+model OAuthToken {
+  id               String    @id @default(uuid())
+  clientId         String    @map("client_id")
+  userId           String?   @map("user_id") // nullable for client credentials
+  tenantId         String?   @map("tenant_id")
+  accessTokenJti   String    @map("access_token_jti") // JWT ID of access token
+  refreshTokenJti  String?   @map("refresh_token_jti")
+  scope            String
+  expiresAt        DateTime  @map("expires_at") // access token expiry
+  refreshExpiresAt DateTime? @map("refresh_expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  client OAuthClient @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  user   User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant?     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([accessTokenJti])
+  @@index([refreshTokenJti])
+  @@map("oauth_tokens")
+}
+
+// ============================================================================
+// SAML 2.0 Tables
+// ============================================================================
+
+// SAML Identity Providers configuration per tenant
+model SamlIdentityProvider {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  name             String   // display name like "Okta SSO" or "Azure AD"
+  entityId         String   @map("entity_id") // IdP entity ID
+  ssoUrl           String   @map("sso_url") // IdP SSO endpoint
+  sloUrl           String?  @map("slo_url") // IdP logout endpoint
+  certificate      String   // IdP's public cert for signature validation
+  nameIdFormat     String   @default("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress") @map("name_id_format")
+  attributeMapping Json     @map("attribute_mapping") // map IdP attributes to our user fields
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userLinks SamlUserLink[]
+
+  @@index([tenantId])
+  @@map("saml_identity_providers")
+}
+
+// SAML User Links - links IdP users to our users
+model SamlUserLink {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  idpId      String   @map("idp_id")
+  nameId     String   @map("name_id") // the NameID from IdP
+  attributes Json?    // cached IdP attributes
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idp  SamlIdentityProvider @relation(fields: [idpId], references: [id], onDelete: Cascade)
+
+  @@unique([idpId, nameId])
+  @@index([userId])
+  @@map("saml_user_links")
+}
+
+// ============================================================================
+// Session Management Tables
+// ============================================================================
+
+// Sessions table - user login sessions
+model Session {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  tenantId         String    @map("tenant_id")
+  sessionTokenHash String    @map("session_token_hash") // hashed session identifier
+  ipAddress        String    @map("ip_address")
+  userAgent        String    @map("user_agent")
+  deviceInfo       Json?     @map("device_info") // parsed UA info
+  location         Json?     // geo info if available
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastActiveAt     DateTime  @default(now()) @map("last_active_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  revokeReason     String?   @map("revoke_reason")
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([sessionTokenHash])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ============================================================================
+// Audit Logging Tables
+// ============================================================================
+
+// Audit Logs table - comprehensive audit trail
+model AuditLog {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  actorId      String?   @map("actor_id") // user who did the action (null for system)
+  actorType    String    @map("actor_type") // 'user', 'system', 'oauth_client', 'api_key'
+  action       String    // what happened
+  resourceType String    @map("resource_type") // what type of thing was affected
+  resourceId   String?   @map("resource_id") // ID of affected resource
+  details      Json?     // additional context
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+  status       String    // 'success', 'failure', 'error'
+  errorMessage String?   @map("error_message")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?  @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([action, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// Demo Application Tables
+// ============================================================================
+
+// Task Status Enum
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+// Task Priority Enum
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+// Tasks table - demo task management
+model Task {
+  id          String       @id @default(uuid())
+  tenantId    String       @map("tenant_id")
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  assignedTo  String?      @map("assigned_to")
+  createdBy   String       @map("created_by")
+  dueDate     DateTime?    @map("due_date")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignee    User?  @relation("TaskAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  creator     User   @relation("TaskCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([assignedTo])
+  @@index([createdBy])
+  @@index([status])
+  @@map("tasks")
+}

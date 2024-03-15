@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IAM Platform Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    
+    h2 {
+      color: #555;
+      margin: 20px 0 10px;
+      font-size: 1.2em;
+    }
+    
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+    
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    
+    .status.info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+    
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px 5px 5px 0;
+      font-size: 14px;
+    }
+    
+    button:hover {
+      background: #0056b3;
+    }
+    
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    button.secondary {
+      background: #6c757d;
+    }
+    
+    button.secondary:hover {
+      background: #545b62;
+    }
+    
+    button.danger {
+      background: #dc3545;
+    }
+    
+    button.danger:hover {
+      background: #c82333;
+    }
+    
+    input {
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin: 5px 0;
+      width: 100%;
+      max-width: 300px;
+    }
+    
+    pre {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    .token-display {
+      word-break: break-all;
+      font-family: monospace;
+      font-size: 11px;
+    }
+    
+    .permission-badge {
+      display: inline-block;
+      background: #e9ecef;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin: 2px;
+      font-size: 12px;
+    }
+    
+    .permission-badge.has {
+      background: #d4edda;
+      color: #155724;
+    }
+    
+    .permission-badge.missing {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    
+    .section {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 IAM Platform Demo</h1>
+    <p>This demo demonstrates the OAuth2 authorization code flow with PKCE, JWT tokens, and permission-based access control.</p>
+    
+    <!-- Authentication Status -->
+    <div class="card">
+      <h2>Authentication Status</h2>
+      <div id="auth-status" class="status info">Not authenticated</div>
+      <div id="user-info" class="hidden">
+        <p><strong>User:</strong> <span id="user-email"></span></p>
+        <p><strong>Roles:</strong> <span id="user-roles"></span></p>
+        <div id="user-permissions"></div>
+      </div>
+    </div>
+    
+    <!-- OAuth2 Login Section -->
+    <div class="card" id="login-section">
+      <h2>Step 1: OAuth2 Login with PKCE</h2>
+      <p>Click to initiate OAuth2 authorization code flow with PKCE (Proof Key for Code Exchange).</p>
+      
+      <div style="margin: 15px 0;">
+        <label>Client ID:</label>
+        <input type="text" id="client-id" value="demo_client" placeholder="OAuth Client ID">
+      </div>
+      
+      <button onclick="initiateOAuth()">Login with OAuth2 + PKCE</button>
+      <button onclick="showDirectLogin()" class="secondary">Direct Login (for testing)</button>
+      
+      <div id="pkce-info" class="hidden" style="margin-top: 15px;">
+        <h3>PKCE Challenge Generated:</h3>
+        <pre id="pkce-details"></pre>
+      </div>
+    </div>
+    
+    <!-- Direct Login (for testing without OAuth setup) -->
+    <div class="card hidden" id="direct-login-section">
+      <h2>Direct Login (Testing Mode)</h2>
+      <p>Use this for testing without full OAuth2 setup.</p>
+      
+      <div style="margin: 10px 0;">
+        <input type="email" id="login-email" placeholder="Email" value="test@example.com">
+        <input type="password" id="login-password" placeholder="Password" value="Test123!">
+        <input type="text" id="login-tenant" placeholder="Tenant Slug (optional)" value="system">
+      </div>
+      
+      <button onclick="directLogin()">Login</button>
+      <button onclick="hideDirectLogin()" class="secondary">Cancel</button>
+    </div>
+    
+    <!-- Token Management -->
+    <div class="card hidden" id="token-section">
+      <h2>Step 2: Token Management</h2>
+      
+      <h3>Access Token (JWT)</h3>
+      <pre id="access-token-display" class="token-display"></pre>
+      
+      <h3>Decoded Payload</h3>
+      <pre id="token-payload"></pre>
+      
+      <h3>Refresh Token</h3>
+      <pre id="refresh-token-display" class="token-display"></pre>
+      
+      <div style="margin-top: 15px;">
+        <button onclick="refreshTokens()">Refresh Tokens</button>
+        <button onclick="logout()" class="danger">Logout</button>
+      </div>
+    </div>
+    
+    <!-- API Calls Section -->
+    <div class="card hidden" id="api-section">
+      <h2>Step 3: Make Authenticated API Calls</h2>
+      <p>Test different endpoints with your JWT token.</p>
+      
+      <div style="margin: 15px 0;">
+        <button onclick="callApi('/health')">GET /health (Public)</button>
+        <button onclick="callApi('/demo/tasks')">GET /demo/tasks (Protected)</button>
+        <button onclick="callApi('/sessions')">GET /sessions (Protected)</button>
+        <button onclick="callApi('/audit-logs')">GET /audit-logs (Admin)</button>
+      </div>
+      
+      <h3>API Response:</h3>
+      <pre id="api-response">Click a button to make an API call</pre>
+    </div>
+    
+    <!-- Permission Demo Section -->
+    <div class="card hidden" id="permission-section">
+      <h2>Step 4: Permission-Based UI</h2>
+      <p>Different UI elements are shown based on your permissions.</p>
+      
+      <div id="task-actions">
+        <button id="btn-create-task" class="hidden" onclick="showAction('Create Task')">➕ Create Task</button>
+        <button id="btn-view-tasks" class="hidden" onclick="showAction('View Tasks')">👁️ View Tasks</button>
+        <button id="btn-edit-task" class="hidden" onclick="showAction('Edit Task')">✏️ Edit Task</button>
+        <button id="btn-delete-task" class="hidden" onclick="showAction('Delete Task')">🗑️ Delete Task</button>
+        <button id="btn-assign-task" class="hidden" onclick="showAction('Assign Task')">👤 Assign Task</button>
+      </div>
+      
+      <div id="action-result" class="status info hidden" style="margin-top: 15px;"></div>
+    </div>
+    
+    <!-- Curl Examples -->
+    <div class="section">
+      <h2>📋 Curl Examples</h2>
+      <p>Copy these commands to test the API from your terminal:</p>
+      
+      <h3>Register a new user:</h3>
+      <pre>curl -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "newuser@example.com",
+    "password": "SecurePass123!",
+    "firstName": "New",
+    "lastName": "User"
+  }'</pre>
+      
+      <h3>Login:</h3>
+      <pre>curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "Test123!"
+  }'</pre>
+      
+      <h3>Make authenticated request:</h3>
+      <pre id="curl-authenticated">curl http://localhost:3000/demo/tasks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"</pre>
+      
+      <h3>Refresh token:</h3>
+      <pre>curl -X POST http://localhost:3000/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "YOUR_REFRESH_TOKEN"
+  }'</pre>
+    </div>
+  </div>
+
+  <script>
+    // ============================================
+    // Token Storage
+    // ============================================
+    
+    const TOKEN_KEY = 'iam_access_token';
+    const REFRESH_TOKEN_KEY = 'iam_refresh_token';
+    const PKCE_VERIFIER_KEY = 'iam_pkce_verifier';
+    
+    function getAccessToken() {
+      return localStorage.getItem(TOKEN_KEY);
+    }
+    
+    function setTokens(accessToken, refreshToken) {
+      localStorage.setItem(TOKEN_KEY, accessToken);
+      if (refreshToken) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      }
+    }
+    
+    function clearTokens() {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      localStorage.removeItem(PKCE_VERIFIER_KEY);
+    }
+    
+    // ============================================
+    // PKCE Helper Functions
+    // ============================================
+    
+    /**
+     * Generate a random string for code_verifier
+     * Uses base64url encoding per RFC 7636 (OAuth 2.0 PKCE)
+     * Result is 43 characters (from 32 bytes)
+     */
+    function generateCodeVerifier() {
+      const array = new Uint8Array(32);
+      crypto.getRandomValues(array);
+      return base64UrlEncode(array);
+    }
+    
+    /**
+     * Generate code_challenge from code_verifier using SHA-256
+     */
+    async function generateCodeChallenge(verifier) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(verifier);
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return base64UrlEncode(new Uint8Array(hash));
+    }
+    
+    /**
+     * Base64 URL encode (without padding) per RFC 4648
+     * Converts standard base64 to URL-safe base64url
+     */
+    function base64UrlEncode(buffer) {
+      // Use Array.from to safely handle large buffers (avoids call stack issues)
+      const bytes = Array.from(buffer);
+      const base64 = btoa(bytes.map(b => String.fromCharCode(b)).join(''));
+      return base64
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+    }
+    
+    /**
+     * Decode JWT token payload
+     */
+    function decodeJwt(token) {
+      try {
+        const parts = token.split('.');
+        if (parts.length !== 3) return null;
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return payload;
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    // ============================================
+    // OAuth2 Flow
+    // ============================================
+    
+    async function initiateOAuth() {
+      const clientId = document.getElementById('client-id').value;
+      
+      // Generate PKCE code_verifier and code_challenge
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = await generateCodeChallenge(codeVerifier);
+      
+      // Store verifier for later use
+      localStorage.setItem(PKCE_VERIFIER_KEY, codeVerifier);
+      
+      // Generate random state for CSRF protection
+      const state = generateCodeVerifier().substring(0, 16);
+      sessionStorage.setItem('oauth_state', state);
+      
+      // Show PKCE info
+      document.getElementById('pkce-info').classList.remove('hidden');
+      document.getElementById('pkce-details').textContent = JSON.stringify({
+        code_verifier: codeVerifier.substring(0, 20) + '...',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        state: state
+      }, null, 2);
+      
+      // Build authorization URL
+      const authUrl = new URL('/oauth/authorize', window.location.origin);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', window.location.origin + '/demo/callback');
+      authUrl.searchParams.set('scope', 'openid profile email');
+      authUrl.searchParams.set('state', state);
+      authUrl.searchParams.set('code_challenge', codeChallenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+      
+      // In a real app, you would redirect to the authorization endpoint
+      console.log('Would redirect to:', authUrl.toString());
+      
+      showStatus('PKCE challenge generated! In production, you would now be redirected to: ' + authUrl.toString(), 'info');
+    }
+    
+    // ============================================
+    // Direct Login (for testing)
+    // ============================================
+    
+    function showDirectLogin() {
+      document.getElementById('direct-login-section').classList.remove('hidden');
+    }
+    
+    function hideDirectLogin() {
+      document.getElementById('direct-login-section').classList.add('hidden');
+    }
+    
+    async function directLogin() {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const tenantSlug = document.getElementById('login-tenant').value;
+      
+      try {
+        const response = await fetch('/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            tenantSlug: tenantSlug || undefined,
+          }),
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          setTokens(data.accessToken, data.refreshToken);
+          showStatus('Login successful!', 'success');
+          updateUI();
+          hideDirectLogin();
+        } else {
+          showStatus('Login failed: ' + (data.message || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showStatus('Login error: ' + error.message, 'error');
+      }
+    }
+    
+    // ============================================
+    // Token Refresh
+    // ============================================
+    
+    async function refreshTokens() {
+      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+      
+      if (!refreshToken) {
+        showStatus('No refresh token available', 'error');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/auth/refresh', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refreshToken }),
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          setTokens(data.accessToken, data.refreshToken);
+          showStatus('Tokens refreshed successfully!', 'success');
+          updateUI();
+        } else {
+          showStatus('Token refresh failed: ' + (data.message || 'Unknown error'), 'error');
+          clearTokens();
+          updateUI();
+        }
+      } catch (error) {
+        showStatus('Refresh error: ' + error.message, 'error');
+      }
+    }
+    
+    // ============================================
+    // Logout
+    // ============================================
+    
+    async function logout() {
+      const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+      
+      if (refreshToken) {
+        try {
+          await fetch('/auth/logout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ refreshToken }),
+          });
+        } catch (error) {
+          console.error('Logout error:', error);
+        }
+      }
+      
+      clearTokens();
+      showStatus('Logged out successfully', 'info');
+      updateUI();
+    }
+    
+    // ============================================
+    // API Calls
+    // ============================================
+    
+    async function callApi(endpoint) {
+      const accessToken = getAccessToken();
+      
+      try {
+        const headers = {};
+        if (accessToken) {
+          headers['Authorization'] = 'Bearer ' + accessToken;
+        }
+        
+        const response = await fetch(endpoint, { headers });
+        const data = await response.json();
+        
+        document.getElementById('api-response').textContent = 
+          'Status: ' + response.status + '\n\n' + JSON.stringify(data, null, 2);
+          
+        if (!response.ok && response.status === 401) {
+          showStatus('Unauthorized - token may be expired. Try refreshing.', 'error');
+        }
+      } catch (error) {
+        document.getElementById('api-response').textContent = 'Error: ' + error.message;
+      }
+    }
+    
+    // ============================================
+    // UI Updates
+    // ============================================
+    
+    function updateUI() {
+      const accessToken = getAccessToken();
+      const isAuthenticated = !!accessToken;
+      
+      // Update auth status
+      const statusEl = document.getElementById('auth-status');
+      const userInfoEl = document.getElementById('user-info');
+      
+      if (isAuthenticated) {
+        statusEl.textContent = 'Authenticated ✓';
+        statusEl.className = 'status success';
+        userInfoEl.classList.remove('hidden');
+        
+        // Decode and display token info
+        const payload = decodeJwt(accessToken);
+        if (payload) {
+          document.getElementById('user-email').textContent = payload.email || 'Unknown';
+          document.getElementById('user-roles').textContent = (payload.roles || []).join(', ');
+          
+          // Display permissions
+          const permissions = payload.permissions || [];
+          const permHtml = permissions.map(p => 
+            '<span class="permission-badge has">' + p + '</span>'
+          ).join('');
+          document.getElementById('user-permissions').innerHTML = 
+            '<p><strong>Permissions:</strong></p>' + permHtml;
+          
+          // Update permission-based buttons
+          updatePermissionButtons(permissions);
+        }
+        
+        // Show token sections
+        document.getElementById('token-section').classList.remove('hidden');
+        document.getElementById('api-section').classList.remove('hidden');
+        document.getElementById('permission-section').classList.remove('hidden');
+        
+        // Display tokens
+        document.getElementById('access-token-display').textContent = 
+          accessToken.substring(0, 50) + '...';
+        document.getElementById('token-payload').textContent = 
+          JSON.stringify(payload, null, 2);
+        document.getElementById('refresh-token-display').textContent = 
+          (localStorage.getItem(REFRESH_TOKEN_KEY) || 'None').substring(0, 50) + '...';
+        
+        // Update curl example
+        document.getElementById('curl-authenticated').textContent = 
+          `curl http://localhost:3000/demo/tasks \\\n  -H "Authorization: Bearer ${accessToken.substring(0, 30)}..."`;
+      } else {
+        statusEl.textContent = 'Not authenticated';
+        statusEl.className = 'status info';
+        userInfoEl.classList.add('hidden');
+        
+        // Hide authenticated sections
+        document.getElementById('token-section').classList.add('hidden');
+        document.getElementById('api-section').classList.add('hidden');
+        document.getElementById('permission-section').classList.add('hidden');
+      }
+    }
+    
+    function updatePermissionButtons(permissions) {
+      const permSet = new Set(permissions);
+      
+      // Show/hide buttons based on permissions
+      const btnCreate = document.getElementById('btn-create-task');
+      const btnView = document.getElementById('btn-view-tasks');
+      const btnEdit = document.getElementById('btn-edit-task');
+      const btnDelete = document.getElementById('btn-delete-task');
+      const btnAssign = document.getElementById('btn-assign-task');
+      
+      btnCreate.classList.toggle('hidden', !permSet.has('tasks:create'));
+      btnView.classList.toggle('hidden', !permSet.has('tasks:list') && !permSet.has('tasks:read'));
+      btnEdit.classList.toggle('hidden', !permSet.has('tasks:update') && !permSet.has('tasks:update:own'));
+      btnDelete.classList.toggle('hidden', !permSet.has('tasks:delete'));
+      btnAssign.classList.toggle('hidden', !permSet.has('tasks:assign'));
+    }
+    
+    function showAction(action) {
+      const resultEl = document.getElementById('action-result');
+      resultEl.classList.remove('hidden');
+      resultEl.textContent = 'Action: ' + action + ' - This would make an API call in a real app!';
+    }
+    
+    function showStatus(message, type) {
+      const statusEl = document.getElementById('auth-status');
+      statusEl.textContent = message;
+      statusEl.className = 'status ' + type;
+    }
+    
+    // ============================================
+    // Handle OAuth Callback
+    // ============================================
+    
+    function handleCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      const error = params.get('error');
+      
+      if (error) {
+        showStatus('OAuth error: ' + error, 'error');
+        return;
+      }
+      
+      if (code) {
+        // Verify state
+        const savedState = sessionStorage.getItem('oauth_state');
+        if (state !== savedState) {
+          showStatus('State mismatch - possible CSRF attack!', 'error');
+          return;
+        }
+        
+        // Exchange code for tokens
+        exchangeCodeForTokens(code);
+      }
+    }
+    
+    async function exchangeCodeForTokens(code) {
+      const codeVerifier = localStorage.getItem(PKCE_VERIFIER_KEY);
+      const clientId = document.getElementById('client-id').value;
+      
+      try {
+        const response = await fetch('/oauth/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            code: code,
+            redirect_uri: window.location.origin + '/demo/callback',
+            client_id: clientId,
+            code_verifier: codeVerifier,
+          }),
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          setTokens(data.access_token, data.refresh_token);
+          showStatus('OAuth login successful!', 'success');
+          
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          
+          updateUI();
+        } else {
+          showStatus('Token exchange failed: ' + (data.error_description || data.error), 'error');
+        }
+      } catch (error) {
+        showStatus('Token exchange error: ' + error.message, 'error');
+      }
+    }
+    
+    // ============================================
+    // Initialize
+    // ============================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      // Check for OAuth callback
+      if (window.location.search.includes('code=')) {
+        handleCallback();
+      }
+      
+      // Update UI based on stored tokens
+      updateUI();
+    });
+  </script>
+</body>
+</html>
