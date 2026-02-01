@@ -121,7 +121,7 @@ The scopes are: `own` (just your stuff), `tenant` (your org), `all` (everything)
 
 ## TODOs and known limitations
 
-Alright, being honest here - some stuff isn't done yet:
+some stuff isn't done yet:
 
 - [ ] Rate limiting - its mentioned in the code as TODOs but not implemented
 - [ ] Email verification flow - schema has the field, logic isn't there
