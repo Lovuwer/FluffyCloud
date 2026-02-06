@@ -1,6 +1,7 @@
 # FluffyCloud IAM Platform
 
 Hey! This is our Identity & Access Management platform. It's built with NestJS and handles all the auth stuff - users, roles, permissions, OAuth, SAML... basically everything you need to secure your apps.
+IF YOU COME ACROSS THIS, DO NOT USE IT, I DONT RECOMMEND IT. ITS AI GENERATED AND THERE WILL BE ALOT OF VULNERABILITIES. PROJECT IS MADE TO PASS A VULNERABILITY BENCHMARK
 
 ## What's in here?
 
